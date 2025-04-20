@@ -1,6 +1,5 @@
-
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { ReactNode } from "react";
 
 interface ProtectedRouteProps {
@@ -8,7 +7,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading } = useSupabaseAuth();
   const location = useLocation();
 
   if (loading) {

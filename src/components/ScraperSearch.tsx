@@ -11,7 +11,7 @@ import {
   ALL_BUSINESS_TYPES,
   CITIES,
   getLocalitiesForCity 
-} from "@/lib/scraper";
+} from "@/lib/supabaseScraper";
 import localitiesData from '@/data/localities.json';
 import { Slider } from "@/components/ui/slider";
 import { 

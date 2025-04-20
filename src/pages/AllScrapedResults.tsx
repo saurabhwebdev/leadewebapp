@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrapedLocation, getRecentScrapes } from "@/lib/scraper";
+import { ScrapedLocation, getRecentScrapes, getTotalLeadCount } from "@/lib/supabaseDb";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import {
   Filter, 
   MapPin, 
   Phone, 
+  Mail,
+  Globe,
   Store, 
   Calendar, 
   ChevronDown, 
@@ -21,7 +23,12 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  AlertCircle
+  AlertCircle,
+  ArrowRight,
+  Copy,
+  ClipboardCheck,
+  ExternalLink,
+  Search
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -49,22 +56,13 @@ import {
   PaginationPrevious,
   PaginationEllipsis,
 } from "@/components/ui/pagination";
-import { db } from "@/lib/firebase";
-import { 
-  collection, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  startAfter, 
-  DocumentData, 
-  QueryDocumentSnapshot,
-  getCountFromServer
-} from "firebase/firestore";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { supabase } from "@/lib/supabase";
+import { Link } from "react-router-dom";
 
 export default function AllScrapedResults() {
-  const { currentUser } = useAuth();
+  const { currentUser } = useSupabaseAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<ScrapedLocation[]>([]);
@@ -80,13 +78,14 @@ export default function AllScrapedResults() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [firstVisible, setFirstVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [pageStack, setPageStack] = useState<QueryDocumentSnapshot<DocumentData>[]>([]);
   
   // Available specialties in the data for filtering
   const [availableSpecialties, setAvailableSpecialties] = useState<string[]>([]);
   const [isLoadingSpecialties, setIsLoadingSpecialties] = useState(false);
+  
+  // State for expanded row
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   
   // Load data on initial page load and when pagination or filters change
   useEffect(() => {
@@ -106,19 +105,17 @@ export default function AllScrapedResults() {
     
     setIsLoadingSpecialties(true);
     try {
-      const specialtiesQuery = query(
-        collection(db, 'scrapedLocations'),
-        orderBy('specialty'),
-        limit(50)
-      );
+      const { data, error } = await supabase
+        .from('scrapedlocations')
+        .select('specialty')
+        .order('specialty');
       
-      const snapshot = await getDocs(specialtiesQuery);
+      if (error) throw error;
       
       // Extract and deduplicate specialties
       const specialtySet = new Set<string>();
-      snapshot.docs.forEach(doc => {
-        const specialty = doc.data().specialty;
-        if (specialty) specialtySet.add(specialty);
+      data.forEach(item => {
+        if (item.specialty) specialtySet.add(item.specialty);
       });
       
       setAvailableSpecialties(Array.from(specialtySet).sort());
@@ -129,99 +126,68 @@ export default function AllScrapedResults() {
     }
   };
   
-  // Fetch the current page of results using Firestore pagination
-  const fetchResultsPage = async (direction: 'next' | 'prev' | 'first' = 'first') => {
+  // Fetch the current page of results using Supabase
+  const fetchResultsPage = async () => {
     setIsLoading(true);
     
     try {
-      // Create the base query
-      let baseQuery = collection(db, 'scrapedLocations');
-      let constraints = [];
+      // Build the Supabase query
+      let query = supabase
+        .from('scrapedlocations')
+        .select('*', { count: 'exact' });
       
       // Add specialty filter if selected
       if (specialtyFilter !== "all") {
-        constraints.push(where('specialty', '==', specialtyFilter));
+        query = query.eq('specialty', specialtyFilter);
       }
       
-      // Add ordering
+      // Add ordering - map camelCase properties to lowercase column names
       const { key, direction: sortDirection } = sortConfig;
-      constraints.push(orderBy(key === 'scrapedAt' ? 'scrapedAt' : key, sortDirection === 'ascending' ? 'asc' : 'desc'));
+      let orderColumn = key.toLowerCase(); // Default to lowercase version
       
-      // Get total count first (for pagination info)
-      if (direction === 'first') {
-        const countQuery = query(baseQuery, ...constraints);
-        const countSnapshot = await getCountFromServer(countQuery);
-        setTotalItems(countSnapshot.data().count);
-      }
+      // Map our camelCase properties to the actual column names in Supabase
+      if (key === 'phoneNumber') orderColumn = 'phonenumber';
+      else if (key === 'scrapedAt') orderColumn = 'scrapedat';
+      else if (key === 'searchQuery') orderColumn = 'searchquery';
       
-      // Build query with pagination
-      let firestoreQuery;
+      query = query.order(orderColumn, { ascending: sortDirection === 'ascending' });
       
-      if (direction === 'next' && lastVisible) {
-        // Get next page
-        firestoreQuery = query(
-          baseQuery,
-          ...constraints,
-          startAfter(lastVisible),
-          limit(itemsPerPage)
-        );
-      } else if (direction === 'prev' && pageStack.length > 0) {
-        // Get previous page
-        const prevPageCursor = pageStack[pageStack.length - 1];
-        setPageStack(prev => prev.slice(0, -1));
-        
-        firestoreQuery = query(
-          baseQuery,
-          ...constraints,
-          startAfter(prevPageCursor),
-          limit(itemsPerPage)
-        );
-      } else {
-        // First page or reset
-        firestoreQuery = query(
-          baseQuery,
-          ...constraints,
-          limit(itemsPerPage)
-        );
-        setPageStack([]);
-      }
+      // Add pagination
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      query = query.range(from, to);
       
-      // Execute the query
-      const snapshot = await getDocs(firestoreQuery);
+      // Execute query
+      const { data, error, count } = await query;
       
-      if (snapshot.empty) {
+      if (error) throw error;
+      
+      if (!data || data.length === 0) {
         setResults([]);
-        setLastVisible(null);
-        setFirstVisible(null);
-        
-        toast({
-          title: "No results found",
-          description: "Try changing your filters",
-          variant: "destructive",
-        });
-      } else {
-        // Save first and last documents for pagination
-        setFirstVisible(snapshot.docs[0]);
-        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-        
-        // If moving to next page, save the first doc of current page to allow going back
-        if (direction === 'next' && firstVisible) {
-          setPageStack(prev => [...prev, firstVisible]);
+        // Only show no results message if there's a filter applied
+        if (specialtyFilter !== "all" || currentPage > 1) {
+          toast({
+            title: "No results found",
+            description: "Try changing your filters or going back to page 1",
+            variant: "destructive",
+          });
         }
-        
-        // Convert documents to ScrapedLocation objects
-        const fetchedResults = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            scrapedAt: data.scrapedAt?.toDate() || new Date()
-          } as ScrapedLocation;
-        });
+      } else {
+        // Convert data to ScrapedLocation objects with correct camelCase properties
+        const fetchedResults = data.map(item => ({
+          id: item.id,
+          name: item.name,
+          specialty: item.specialty,
+          address: item.address,
+          phoneNumber: item.phonenumber,
+          email: item.email,
+          scrapedAt: item.scrapedat ? new Date(item.scrapedat) : new Date(),
+          searchQuery: item.searchquery,
+          user_id: item.user_id
+        }));
         
         setResults(fetchedResults);
       }
-      
     } catch (error) {
       console.error("Error fetching page:", error);
       toast({
@@ -234,33 +200,11 @@ export default function AllScrapedResults() {
     }
   };
   
-  // Fetch the total number of leads from all collections
+  // Fetch the total count from Supabase
   const fetchTotalCount = async () => {
     try {
-      // Use the getRecentScrapes function with a high limit to get all data for counting
-      const allData = await getRecentScrapes(100000);
-      
-      // Apply specialty filter if needed
-      let filteredData = allData;
-      if (specialtyFilter !== "all") {
-        filteredData = allData.filter(item => item.specialty === specialtyFilter);
-      }
-      
-      // Count unique leads (deduplicate by name + phone)
-      const uniqueLeadKeys = new Set();
-      const uniqueLeads: ScrapedLocation[] = [];
-      
-      filteredData.forEach(item => {
-        const key = `${item.name}-${item.phoneNumber}`;
-        if (!uniqueLeadKeys.has(key)) {
-          uniqueLeadKeys.add(key);
-          uniqueLeads.push(item);
-        }
-      });
-      
-      // Update total count with actual count
-      setTotalItems(uniqueLeads.length);
-      
+      const totalCount = await getTotalLeadCount();
+      setTotalItems(totalCount);
     } catch (error) {
       console.error("Error fetching total count:", error);
     }
@@ -275,7 +219,9 @@ export default function AllScrapedResults() {
       result.name.toLowerCase().includes(searchTerm) ||
       result.address.toLowerCase().includes(searchTerm) ||
       result.specialty.toLowerCase().includes(searchTerm) ||
-      (result.phoneNumber && result.phoneNumber.toLowerCase().includes(searchTerm))
+      (result.phoneNumber && result.phoneNumber.toLowerCase().includes(searchTerm)) ||
+      (result.email && result.email.toLowerCase().includes(searchTerm)) ||
+      (result.searchQuery && result.searchQuery.toLowerCase().includes(searchTerm))
     );
   };
   
@@ -285,10 +231,10 @@ export default function AllScrapedResults() {
     
     if (page > currentPage) {
       // Going forward
-      fetchResultsPage('next');
+      fetchResultsPage();
     } else if (page < currentPage) {
       // Going backward
-      fetchResultsPage('prev');
+      fetchResultsPage();
     }
     
     setCurrentPage(page);
@@ -313,120 +259,107 @@ export default function AllScrapedResults() {
       <ChevronDown className="ml-1 h-4 w-4" />;
   };
 
-  // Export to CSV
+  // Export all results to CSV
   const exportToCSV = async () => {
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
       toast({
-        title: "Preparing export",
-        description: "Getting all results for export...",
+        title: "Preparing export...",
+        description: "This may take a moment for large datasets",
       });
       
       // For export, we need to fetch all results that match the current filters
-      const baseQuery = collection(db, 'scrapedLocations');
-      let constraints = [];
+      let query = supabase
+        .from('scrapedlocations')
+        .select('*');
       
+      // Add specialty filter if selected
       if (specialtyFilter !== "all") {
-        constraints.push(where('specialty', '==', specialtyFilter));
+        query = query.eq('specialty', specialtyFilter);
       }
       
+      // Add ordering - map camelCase properties to lowercase column names
       const { key, direction: sortDirection } = sortConfig;
-      constraints.push(orderBy(key === 'scrapedAt' ? 'scrapedAt' : key, sortDirection === 'ascending' ? 'asc' : 'desc'));
+      let orderColumn = key.toLowerCase(); // Default to lowercase version
       
-      // Fetch in batches of 100 for export
-      const EXPORT_BATCH_SIZE = 100;
-      let lastDoc = null;
-      let allResults: ScrapedLocation[] = [];
-      let hasMore = true;
+      // Map our camelCase properties to the actual column names in Supabase
+      if (key === 'phoneNumber') orderColumn = 'phonenumber';
+      else if (key === 'scrapedAt') orderColumn = 'scrapedat';
+      else if (key === 'searchQuery') orderColumn = 'searchquery';
       
-      while (hasMore) {
-        let exportQuery;
-        if (lastDoc) {
-          exportQuery = query(
-            baseQuery,
-            ...constraints,
-            startAfter(lastDoc),
-            limit(EXPORT_BATCH_SIZE)
-          );
-        } else {
-          exportQuery = query(
-            baseQuery,
-            ...constraints,
-            limit(EXPORT_BATCH_SIZE)
-          );
-        }
-        
-        const snapshot = await getDocs(exportQuery);
-        
-        if (snapshot.empty) {
-          hasMore = false;
-        } else {
-          lastDoc = snapshot.docs[snapshot.docs.length - 1];
-          
-          const batchResults = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              scrapedAt: data.scrapedAt?.toDate() || new Date()
-            } as ScrapedLocation;
-          });
-          
-          allResults = [...allResults, ...batchResults];
-          
-          if (snapshot.docs.length < EXPORT_BATCH_SIZE) {
-            hasMore = false;
-          }
-        }
+      query = query.order(orderColumn, { ascending: sortDirection === 'ascending' });
+      
+      // Fetch all data (may need pagination for very large datasets)
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      
+      if (!data || data.length === 0) {
+        toast({
+          title: "No data to export",
+          description: "Try changing your filters first",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
       }
       
-      // Filter results if text filter is applied
-      if (filterText) {
-        const searchTerm = filterText.toLowerCase();
-        allResults = allResults.filter(result => 
-          result.name.toLowerCase().includes(searchTerm) ||
-          result.address.toLowerCase().includes(searchTerm) ||
-          result.specialty.toLowerCase().includes(searchTerm) ||
-          (result.phoneNumber && result.phoneNumber.toLowerCase().includes(searchTerm))
-        );
-      }
+      // Process data
+      const exportResults = data.map(item => ({
+        ...item,
+        scrapedAt: item.scrapedat ? new Date(item.scrapedat) : new Date(),
+      }));
       
-      // Generate CSV
-      const headers = ['Name', 'Specialty', 'Address', 'Phone Number', 'Scraped Date', 'Search Query'];
-      const dataRows = allResults.map(location => [
-        location.name,
-        location.specialty,
-        location.address,
-        location.phoneNumber || '',
-        new Date(location.scrapedAt).toLocaleString(),
-        location.searchQuery
-      ]);
+      // Generate CSV data
+      const headers = [
+        { label: "Business Name", key: "name" },
+        { label: "Specialty", key: "specialty" },
+        { label: "Address", key: "address" },
+        { label: "Phone", key: "phoneNumber" },
+        { label: "Email", key: "email" },
+        { label: "Scraped Date", key: "scrapedAt" },
+        { label: "Search Query", key: "searchQuery" },
+      ];
       
-      const csvContent = [
-        headers.join(','),
-        ...dataRows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      ].join('\n');
+      let csvContent = headers.map(h => h.label).join(',') + '\n';
       
+      // Add data rows
+      exportResults.forEach(item => {
+        const row = [
+          `"${item.name?.replace(/"/g, '""') || ''}"`,
+          `"${item.specialty?.replace(/"/g, '""') || ''}"`,
+          `"${item.address?.replace(/"/g, '""') || ''}"`,
+          `"${item.phoneNumber?.replace(/"/g, '""') || ''}"`,
+          `"${item.email?.replace(/"/g, '""') || ''}"`,
+          `"${formatDate(item.scrapedAt)}"`,
+          `"${item.searchQuery?.replace(/"/g, '""') || ''}"`,
+        ];
+        csvContent += row.join(',') + '\n';
+      });
+      
+      // Create download link
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `business-leads-${new Date().toISOString().slice(0, 10)}.csv`);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `lead_export_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
       toast({
-        title: "Export Complete",
-        description: `Exported ${allResults.length} business leads to CSV`,
+        title: "Export complete!",
+        description: `${exportResults.length} leads exported successfully.`,
         className: "bg-gradient-to-r from-teal-500 to-emerald-500 text-white",
       });
     } catch (error) {
-      console.error("Error exporting to CSV:", error);
+      console.error("Error exporting data:", error);
       toast({
+        title: "Export failed",
+        description: "Please try again later",
         variant: "destructive",
-        title: "Export Failed",
-        description: "An error occurred while exporting data to CSV",
       });
     } finally {
       setIsLoading(false);
@@ -452,6 +385,52 @@ export default function AllScrapedResults() {
   // Get filtered results for display
   const filteredResults = getFilteredResults();
 
+  // Empty state component for when there's no data
+  const EmptyState = () => (
+    <div className="text-center py-12 space-y-3">
+      <Store className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+      <h3 className="text-lg font-medium text-gray-700">No leads found</h3>
+      <p className="text-sm text-gray-500 max-w-md mx-auto">
+        Try scraping for business leads using the Business Lead Scraper first.
+        Once you've collected leads, they'll appear here.
+      </p>
+      <div className="pt-4">
+        <Link to="/lead-scraper">
+          <Button 
+            className="bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:from-teal-600 hover:to-emerald-600"
+          >
+            Go to Lead Scraper <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        </Link>
+      </div>
+    </div>
+  );
+
+  // Toggle expanded row
+  const toggleExpandRow = (id: string) => {
+    if (expandedRow === id) {
+      setExpandedRow(null);
+    } else {
+      setExpandedRow(id);
+    }
+  };
+
+  // Copy to clipboard
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    
+    toast({
+      title: "Copied to clipboard",
+      description: "The text has been copied to your clipboard.",
+      className: "bg-teal-50 text-teal-700 border-teal-200",
+    });
+    
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 2000);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Navbar />
@@ -476,7 +455,7 @@ export default function AllScrapedResults() {
                 className="flex items-center gap-1.5"
                 onClick={() => {
                   setCurrentPage(1);
-                  fetchResultsPage('first');
+                  fetchResultsPage();
                 }}
                 disabled={isLoading}
               >
@@ -506,14 +485,15 @@ export default function AllScrapedResults() {
                   </CardDescription>
                 </div>
                 
-                <div className="flex flex-col md:flex-row gap-3">
-                  <div className="relative">
-                    <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60" size={16} />
+                <div className="mt-4">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/70" size={18} />
                     <Input
-                      placeholder="Search current page..."
-                      className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/60 max-w-xs h-9"
                       value={filterText}
                       onChange={(e) => setFilterText(e.target.value)}
+                      placeholder="Search by name, specialty, address, phone, email or query..."
+                      className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/70"
                     />
                   </div>
                   
@@ -525,16 +505,20 @@ export default function AllScrapedResults() {
                     }}
                     disabled={isLoadingSpecialties}
                   >
-                    <SelectTrigger className="bg-white/10 border-white/20 text-white h-9 max-w-[200px]">
-                      <SelectValue placeholder="Filter by specialty" />
+                    <SelectTrigger className="bg-white/10 border-white/20 text-white w-[160px]">
+                      <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Specialties</SelectItem>
-                      {availableSpecialties.map(specialty => (
-                        <SelectItem key={specialty} value={specialty}>
-                          {specialty}
+                      {isLoadingSpecialties ? (
+                        <SelectItem value="loading" disabled>
+                          Loading...
                         </SelectItem>
-                      ))}
+                      ) : (
+                        availableSpecialties.map(specialty => (
+                          <SelectItem key={specialty} value={specialty}>{specialty}</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                   
@@ -543,11 +527,10 @@ export default function AllScrapedResults() {
                     onValueChange={(value) => {
                       setItemsPerPage(Number(value));
                       setCurrentPage(1);
-                      fetchResultsPage('first');
                     }}
                   >
-                    <SelectTrigger className="bg-white/10 border-white/20 text-white h-9 w-28">
-                      <SelectValue placeholder="Rows per page" />
+                    <SelectTrigger className="bg-white/10 border-white/20 text-white w-[120px]">
+                      <SelectValue placeholder="Per page" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="10">10 per page</SelectItem>
@@ -556,100 +539,312 @@ export default function AllScrapedResults() {
                       <SelectItem value="100">100 per page</SelectItem>
                     </SelectContent>
                   </Select>
+                  </div>
+                  
+                  <div className="mt-2 text-xs text-white/80">
+                    Click the expand button on any row to see detailed information and contact options
+                  </div>
                 </div>
               </div>
             </CardHeader>
             
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table className="w-full excel-style">
-                  <TableHeader className="bg-gray-50 sticky top-0 border-b">
-                    <TableRow>
-                      <TableHead className="cursor-pointer whitespace-nowrap" onClick={() => requestSort('name')}>
-                        <div className="flex items-center">
-                          Name {getSortIcon('name')}
-                        </div>
-                      </TableHead>
-                      <TableHead className="cursor-pointer whitespace-nowrap" onClick={() => requestSort('specialty')}>
-                        <div className="flex items-center">
-                          Specialty {getSortIcon('specialty')}
-                        </div>
-                      </TableHead>
-                      <TableHead className="cursor-pointer whitespace-nowrap" onClick={() => requestSort('address')}>
-                        <div className="flex items-center">
-                          Address {getSortIcon('address')}
-                        </div>
-                      </TableHead>
-                      <TableHead className="cursor-pointer whitespace-nowrap">
-                        <div className="flex items-center">
-                          Phone Number
-                        </div>
-                      </TableHead>
-                      <TableHead className="cursor-pointer whitespace-nowrap" onClick={() => requestSort('scrapedAt')}>
-                        <div className="flex items-center">
-                          Date Scraped {getSortIcon('scrapedAt')}
-                        </div>
-                      </TableHead>
-                      <TableHead className="cursor-pointer whitespace-nowrap">
-                        <div className="flex items-center">
-                          Query
-                        </div>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredResults.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                          {isLoading ? (
-                            <div className="flex items-center justify-center">
-                              <RefreshCw className="h-5 w-5 animate-spin mr-2" />
-                              Loading business leads...
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center">
-                              <AlertCircle className="h-8 w-8 text-amber-500 mb-2" />
-                              <p>No business leads found matching your filters.</p>
-                              {filterText && <p className="text-sm mt-1">Try clearing your search term.</p>}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredResults.map((lead, index) => (
-                        <TableRow key={`${lead.id || lead.name}-${index}`} className="hover:bg-gray-50 border-b border-gray-100">
-                          <TableCell className="font-medium">{lead.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-200">
-                              {lead.specialty}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate">
+              <div className="overflow-hidden">
+                {!isLoading && results.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  <div className="rounded-md border">
+                    <ScrollArea className="h-[500px]">
+                    <Table className="w-full excel-style">
+                        <TableHeader className="bg-gray-50 sticky top-0 border-b z-10">
+                        <TableRow>
+                          <TableHead className="cursor-pointer whitespace-nowrap" onClick={() => requestSort('name')}>
                             <div className="flex items-center">
-                              <MapPin className="mr-1 h-3 w-3 text-gray-400 shrink-0" />
-                              <span className="text-sm">{lead.address}</span>
+                              Name {getSortIcon('name')}
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center mb-1 text-sm">
-                              <Phone className="mr-1 h-3 w-3 text-gray-400 shrink-0" />
-                              <span>{lead.phoneNumber || "N/A"}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs text-gray-500 whitespace-nowrap">
+                          </TableHead>
+                          <TableHead className="cursor-pointer whitespace-nowrap" onClick={() => requestSort('specialty')}>
                             <div className="flex items-center">
-                              <Calendar className="mr-1 h-3 w-3 text-gray-400" />
-                              {formatDate(lead.scrapedAt)}
+                              Specialty {getSortIcon('specialty')}
                             </div>
-                          </TableCell>
-                          <TableCell className="text-xs text-gray-500 max-w-[200px] truncate">
-                            {lead.searchQuery}
-                          </TableCell>
+                          </TableHead>
+                            <TableHead className="cursor-pointer whitespace-nowrap hidden md:table-cell" onClick={() => requestSort('address')}>
+                            <div className="flex items-center">
+                              Address {getSortIcon('address')}
+                            </div>
+                          </TableHead>
+                            <TableHead className="whitespace-nowrap hidden sm:table-cell">
+                            <div className="flex items-center">
+                                Phone
+                            </div>
+                          </TableHead>
+                            <TableHead className="cursor-pointer whitespace-nowrap hidden lg:table-cell" onClick={() => requestSort('scrapedAt')}>
+                            <div className="flex items-center">
+                                Date {getSortIcon('scrapedAt')}
+                            </div>
+                          </TableHead>
+                            <TableHead className="text-right w-10">
+                              <span className="sr-only">Actions</span>
+                          </TableHead>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredResults.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                              {isLoading ? (
+                                <div className="flex items-center justify-center">
+                                  <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+                                  Loading business leads...
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <AlertCircle className="h-8 w-8 text-amber-500 mb-2" />
+                                  <p>No business leads found matching your filters.</p>
+                                  {filterText && <p className="text-sm mt-1">Try clearing your search term.</p>}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                            filteredResults.map((lead, index) => {
+                              const uniqueRowId = `${lead.id || lead.name}-${index}`;
+                              const isExpanded = expandedRow === uniqueRowId;
+                              
+                              return (
+                                <>
+                                  <TableRow key={uniqueRowId} className="hover:bg-teal-50/30 border-b border-gray-100">
+                                    <TableCell className="font-medium text-teal-800">{lead.name}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-200">
+                                  {lead.specialty}
+                                </Badge>
+                              </TableCell>
+                                    <TableCell className="hidden md:table-cell">
+                                      <div className="flex items-center max-w-[200px] truncate">
+                                  <MapPin className="mr-1 h-3 w-3 text-gray-400 shrink-0" />
+                                        <span className="text-sm truncate">{lead.address}</span>
+                                </div>
+                              </TableCell>
+                                    <TableCell className="hidden sm:table-cell">
+                                      {lead.phoneNumber ? (
+                                        <div className="flex items-center text-sm group">
+                                          <Phone className="mr-1 h-3 w-3 text-gray-400" />
+                                          <span className="mr-1">{lead.phoneNumber}</span>
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button 
+                                                  variant="ghost" 
+                                                  size="icon" 
+                                                  className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                  onClick={() => copyToClipboard(lead.phoneNumber || '', uniqueRowId)}
+                                                >
+                                                  {copiedId === uniqueRowId ? (
+                                                    <ClipboardCheck className="h-3 w-3 text-teal-500" />
+                                                  ) : (
+                                                    <Copy className="h-3 w-3 text-gray-400" />
+                                                  )}
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">
+                                                <p>Copy phone number</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                </div>
+                                      ) : (
+                                        <span className="text-xs text-gray-400">No phone available</span>
+                                      )}
+                              </TableCell>
+                                    <TableCell className="hidden lg:table-cell text-xs text-gray-500 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <Calendar className="mr-1 h-3 w-3 text-gray-400" />
+                                  {formatDate(lead.scrapedAt)}
+                                </div>
+                              </TableCell>
+                                    <TableCell className="text-right">
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="h-8 w-8 p-0"
+                                        onClick={() => toggleExpandRow(uniqueRowId)}
+                                      >
+                                        {isExpanded ? (
+                                          <ChevronUp className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronDown className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                  
+                                  {isExpanded && (
+                                    <TableRow className="bg-slate-50">
+                                      <TableCell colSpan={6} className="p-0">
+                                        <div className="p-4">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                              <h4 className="font-medium text-sm text-gray-700 mb-2">Details</h4>
+                                              <div className="space-y-2">
+                                                <div className="flex items-start gap-2">
+                                                  <MapPin className="h-4 w-4 text-teal-500 mt-0.5" />
+                                                  <div>
+                                                    <p className="text-sm font-medium">Address</p>
+                                                    <p className="text-sm text-gray-600">{lead.address}</p>
+                                                  </div>
+                                                </div>
+                                                
+                                                <div className="flex items-start gap-2">
+                                                  <Calendar className="h-4 w-4 text-teal-500 mt-0.5" />
+                                                  <div>
+                                                    <p className="text-sm font-medium">Scraped Date</p>
+                                                    <p className="text-sm text-gray-600">
+                                                      {formatDate(lead.scrapedAt)}
+                                                    </p>
+                                                  </div>
+                                                </div>
+
+                                                <div className="flex items-start gap-2">
+                                                  <Search className="h-4 w-4 text-teal-500 mt-0.5" />
+                                                  <div>
+                                                    <p className="text-sm font-medium">Search Query</p>
+                                                    <p className="text-sm text-gray-600">{lead.searchQuery}</p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            
+                                            <div>
+                                              <h4 className="font-medium text-sm text-gray-700 mb-2">Contact Options</h4>
+                                              <div className="space-y-2">
+                                                {lead.phoneNumber && (
+                                                  <div className="flex items-start gap-2">
+                                                    <Phone className="h-4 w-4 text-teal-500 mt-0.5" />
+                                                    <div className="flex-grow">
+                                                      <p className="text-sm font-medium">Phone</p>
+                                                      <div className="flex items-center justify-between flex-wrap gap-2">
+                                                        <p className="text-sm text-gray-600">{lead.phoneNumber}</p>
+                                                        <div className="flex gap-1">
+                                                          <Button 
+                                                            variant="outline" 
+                                                            size="sm" 
+                                                            className="h-7 px-2 text-xs"
+                                                            onClick={() => copyToClipboard(lead.phoneNumber || '', uniqueRowId)}
+                                                          >
+                                                            {copiedId === uniqueRowId ? (
+                                                              <>
+                                                                <ClipboardCheck className="mr-1 h-3 w-3" />
+                                                                Copied
+                                                              </>
+                                                            ) : (
+                                                              <>
+                                                                <Copy className="mr-1 h-3 w-3" />
+                                                                Copy
+                                                              </>
+                                                            )}
+                                                          </Button>
+                                                          <Button 
+                                                            variant="outline" 
+                                                            size="sm" 
+                                                            className="h-7 px-2 text-xs"
+                                                            onClick={() => window.open(`tel:${lead.phoneNumber}`, '_blank')}
+                                                          >
+                                                            <Phone className="mr-1 h-3 w-3" />
+                                                            Call
+                                                          </Button>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                )}
+                                                
+                                                {lead.email && (
+                                                  <div className="flex items-start gap-2">
+                                                    <Mail className="h-4 w-4 text-teal-500 mt-0.5" />
+                                                    <div className="flex-grow">
+                                                      <p className="text-sm font-medium">Email</p>
+                                                      <div className="flex items-center justify-between flex-wrap gap-2">
+                                                        <p className="text-sm text-gray-600">{lead.email}</p>
+                                                        <div className="flex gap-1">
+                                                          <Button 
+                                                            variant="outline" 
+                                                            size="sm" 
+                                                            className="h-7 px-2 text-xs"
+                                                            onClick={() => copyToClipboard(lead.email || '', `${uniqueRowId}-email`)}
+                                                          >
+                                                            {copiedId === `${uniqueRowId}-email` ? (
+                                                              <>
+                                                                <ClipboardCheck className="mr-1 h-3 w-3" />
+                                                                Copied
+                                                              </>
+                                                            ) : (
+                                                              <>
+                                                                <Copy className="mr-1 h-3 w-3" />
+                                                                Copy
+                                                              </>
+                                                            )}
+                                                          </Button>
+                                                          <Button 
+                                                            variant="outline" 
+                                                            size="sm" 
+                                                            className="h-7 px-2 text-xs"
+                                                            onClick={() => window.open(`mailto:${lead.email}`, '_blank')}
+                                                          >
+                                                            <Mail className="mr-1 h-3 w-3" />
+                                                            Email
+                                                          </Button>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                )}
+                                                
+                                                <div className="flex items-start gap-2">
+                                                  <Globe className="h-4 w-4 text-teal-500 mt-0.5" />
+                                                  <div className="flex-grow">
+                                                    <p className="text-sm font-medium">Google Maps</p>
+                                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                                      <p className="text-sm text-gray-600 truncate max-w-[200px]">{lead.name}</p>
+                                                      <Button 
+                                                        variant="outline" 
+                                                        size="sm" 
+                                                        className="h-7 px-2 text-xs"
+                                                        onClick={() => window.open(`https://www.google.com/maps/search/${encodeURIComponent(lead.name + ' ' + lead.address)}`, '_blank')}
+                                                      >
+                                                        <ExternalLink className="mr-1 h-3 w-3" />
+                                                        View on Maps
+                                                      </Button>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                          
+                                          <div className="flex justify-end mt-4">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => toggleExpandRow(uniqueRowId)}
+                                              className="text-xs text-gray-500"
+                                            >
+                                              Close Details
+                                            </Button>
+                                          </div>
+                                        </div>
+                              </TableCell>
+                            </TableRow>
+                                  )}
+                                </>
+                              );
+                            })
+                        )}
+                      </TableBody>
+                    </Table>
+                    </ScrollArea>
+                  </div>
+                )}
               </div>
               
               {/* Pagination and summary info */}
@@ -668,7 +863,7 @@ export default function AllScrapedResults() {
                           className="h-8 w-8"
                           onClick={() => {
                             setCurrentPage(1);
-                            fetchResultsPage('first');
+                            fetchResultsPage();
                           }} 
                           disabled={currentPage === 1 || isLoading}
                         >
@@ -700,7 +895,7 @@ export default function AllScrapedResults() {
                           size="icon" 
                           className="h-8 w-8"
                           onClick={() => goToPage(currentPage + 1)} 
-                          disabled={!lastVisible || isLoading}
+                          disabled={!filteredResults.length || isLoading}
                         >
                           <ChevronRight className="h-4 w-4" />
                         </Button>
@@ -745,7 +940,8 @@ export default function AllScrapedResults() {
         </div>
       </main>
       
-      <style jsx>{`
+      <style>
+        {`
         .excel-style {
           border-collapse: collapse;
           font-size: 14px;
@@ -766,7 +962,8 @@ export default function AllScrapedResults() {
         .excel-style tr:nth-child(even) {
           background-color: #fafafa;
         }
-      `}</style>
+        `}
+      </style>
       
       <Footer />
     </div>

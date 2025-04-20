@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useState } from "react";
 import { Menu, X, Map, Database, User, Settings, LogOut, Store, Clock } from "lucide-react";
 import {
@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function Navbar() {
-  const { currentUser, logout, loginWithGoogle } = useAuth();
+  const { currentUser, logout, loginWithGoogle } = useSupabaseAuth();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -30,11 +30,39 @@ export default function Navbar() {
   const handleLogin = async () => {
     try {
       await loginWithGoogle();
-      navigate("/dashboard");
+      // With Supabase OAuth, navigation happens after redirect
     } catch (error) {
       console.error("Failed to log in", error);
     }
   };
+
+  // Get user avatar and name from Supabase user
+  const getUserAvatar = () => {
+    if (!currentUser) return "";
+    
+    // Try to get avatar from user metadata first
+    if (currentUser.user_metadata?.avatar_url) {
+      return currentUser.user_metadata.avatar_url;
+    }
+    
+    // Fallback to identicon or empty string
+    return "";
+  };
+  
+  const getUserDisplayName = () => {
+    if (!currentUser) return "User";
+    
+    // Try to get name from user metadata
+    if (currentUser.user_metadata?.full_name) {
+      return currentUser.user_metadata.full_name;
+    }
+    
+    // Fallback to email
+    return currentUser.email?.split('@')[0] || "User";
+  };
+  
+  const userInitials = getUserDisplayName().substring(0, 2).toUpperCase();
+  const userEmail = currentUser?.email || "";
 
   return (
     <nav className="bg-white/80 backdrop-blur-md border-b border-gray-100 py-4 px-6 sticky top-0 z-50 animate-fade-in">
@@ -52,11 +80,6 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-6">
           <Link to="/" className="text-gray-700 hover:text-teal-500 transition-colors">
             Home
-          </Link>
-          
-          <Link to="/waitlist" className="text-gray-700 hover:text-teal-500 transition-colors flex items-center gap-1.5">
-            <Clock className="h-4 w-4" />
-            Join Waitlist
           </Link>
           
           {currentUser ? (
@@ -78,9 +101,9 @@ export default function Navbar() {
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 ml-4 outline-none">
                     <Avatar className="h-8 w-8 ring-2 ring-teal-500/20 cursor-pointer hover:ring-teal-500/40 transition-all">
-                      <AvatarImage src={currentUser.photoURL || ""} alt={currentUser.displayName || "User"} />
+                      <AvatarImage src={getUserAvatar()} alt={getUserDisplayName()} />
                       <AvatarFallback className="bg-gradient-to-r from-teal-500 to-emerald-500 text-white">
-                        {currentUser.displayName?.substring(0, 2) || "U"}
+                        {userInitials}
                       </AvatarFallback>
                     </Avatar>
                   </button>
@@ -88,8 +111,8 @@ export default function Navbar() {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>
                     <div className="flex flex-col">
-                      <span>{currentUser.displayName}</span>
-                      <span className="text-xs text-gray-500 truncate">{currentUser.email}</span>
+                      <span>{getUserDisplayName()}</span>
+                      <span className="text-xs text-gray-500 truncate">{userEmail}</span>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
@@ -145,11 +168,6 @@ export default function Navbar() {
             Home
           </Link>
           
-          <Link to="/waitlist" className="flex items-center gap-1.5 py-2 text-gray-700 hover:text-teal-500">
-            <Clock className="h-4 w-4" />
-            Join Waitlist
-          </Link>
-          
           {currentUser ? (
             <>
               <Link to="/dashboard" className="block py-2 text-gray-700 hover:text-teal-500">
@@ -177,12 +195,12 @@ export default function Navbar() {
               </Button>
               <div className="flex items-center gap-2 py-2">
                 <Avatar className="h-8 w-8 ring-2 ring-teal-500/20">
-                  <AvatarImage src={currentUser.photoURL || ""} alt={currentUser.displayName || "User"} />
+                  <AvatarImage src={getUserAvatar()} alt={getUserDisplayName()} />
                   <AvatarFallback className="bg-gradient-to-r from-teal-500 to-emerald-500 text-white">
-                    {currentUser.displayName?.substring(0, 2) || "U"}
+                    {userInitials}
                   </AvatarFallback>
                 </Avatar>
-                <span className="text-sm text-gray-700">{currentUser.displayName}</span>
+                <span className="text-sm text-gray-700">{getUserDisplayName()}</span>
               </div>
             </>
           ) : (

@@ -24,16 +24,20 @@ import {
   Database,
   Store
 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { ScrapedLocation, getRecentScrapes } from "@/lib/scraper";
+import { ScrapedLocation, getRecentScrapes } from "@/lib/supabaseDb";
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { currentUser, logout, updateUserProfile } = useAuth();
+  const { currentUser, logout, updateUserProfile } = useSupabaseAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [displayName, setDisplayName] = useState(currentUser?.displayName || "");
+  
+  // Get name from user metadata or email
+  const userFullName = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || "User";
+  const [displayName, setDisplayName] = useState(userFullName);
+  
   const [stats, setStats] = useState({
     totalScrapes: 0,
     totalBusinesses: 0,
@@ -44,7 +48,11 @@ export default function Profile() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const scrapes = await getRecentScrapes(1000);
+        console.log('Fetching user data for profile:', currentUser?.id);
+        const response = await getRecentScrapes(1000);
+        const scrapes = response.data || [];
+        
+        console.log(`Profile received ${scrapes.length} scrapes from Supabase`);
         
         // Count unique businesses and queries
         const uniqueBusinesses = new Set();
@@ -66,6 +74,7 @@ export default function Profile() {
             hour: '2-digit',
             minute: '2-digit'
           });
+          console.log('Most recent activity:', lastActivity);
         }
         
         setStats({
@@ -74,13 +83,17 @@ export default function Profile() {
           lastActivity
         });
         
+        console.log('Profile stats updated:', uniqueQueries.size, uniqueBusinesses.size);
+        
       } catch (error) {
         console.error("Error fetching user stats:", error);
       }
     };
     
-    fetchStats();
-  }, []);
+    if (currentUser) {
+      fetchStats();
+    }
+  }, [currentUser]);
 
   const handleLogout = async () => {
     setIsLoading(true);
@@ -115,7 +128,7 @@ export default function Profile() {
 
     setIsLoading(true);
     try {
-      await updateUserProfile(displayName);
+      await updateUserProfile({ full_name: displayName });
       toast({
         title: "Profile updated",
         description: "Your profile has been updated successfully",
@@ -135,6 +148,15 @@ export default function Profile() {
   // Set document title
   document.title = "Your Profile - MapHarvest";
 
+  // Get initials for avatar
+  const getInitials = () => {
+    if (!displayName) return "U";
+    return displayName.substring(0, 2).toUpperCase();
+  };
+
+  // Get avatar URL from Supabase user
+  const avatarUrl = currentUser?.user_metadata?.avatar_url || null;
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Navbar />
@@ -149,9 +171,9 @@ export default function Profile() {
                   <div className="flex justify-center mb-4">
                     <div className="relative">
                       <Avatar className="h-24 w-24">
-                        <AvatarImage src={currentUser?.photoURL || ""} alt={currentUser?.displayName || "User"} />
+                        <AvatarImage src={avatarUrl || ""} alt={displayName} />
                         <AvatarFallback className="text-2xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white">
-                          {displayName.substring(0, 2)}
+                          {getInitials()}
                         </AvatarFallback>
                       </Avatar>
                       <div className="absolute -bottom-1 -right-1">
@@ -161,7 +183,7 @@ export default function Profile() {
                       </div>
                     </div>
                   </div>
-                  <CardTitle className="text-center">{currentUser?.displayName || "User"}</CardTitle>
+                  <CardTitle className="text-center">{displayName}</CardTitle>
                   <CardDescription className="text-center">
                     {currentUser?.email}
                   </CardDescription>
@@ -248,106 +270,42 @@ export default function Profile() {
                         <Input 
                           id="email"
                           value={currentUser?.email || ""}
-                          readOnly
                           disabled
+                          className="bg-gray-50"
                         />
                         <p className="text-xs text-gray-500">
-                          Email changes require verification and password re-authentication
+                          Email cannot be changed
                         </p>
                       </div>
                     </CardContent>
                     <CardFooter>
                       <Button 
                         onClick={handleUpdateProfile}
-                        disabled={isLoading || displayName === currentUser?.displayName}
-                        className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600"
+                        disabled={isLoading}
+                        className="ml-auto bg-teal-500 hover:bg-teal-600"
                       >
                         Save Changes
                       </Button>
                     </CardFooter>
-                  </Card>
-                  
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Contact Information</CardTitle>
-                      <CardDescription>
-                        Add your contact details for better services
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Phone Number</Label>
-                        <div className="flex items-center gap-2">
-                          <Input 
-                            id="phone"
-                            placeholder="Your phone number"
-                          />
-                          <Button variant="outline" size="icon">
-                            <Phone className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        This feature will be available in a future update.
-                      </p>
-                    </CardContent>
                   </Card>
                 </TabsContent>
                 
                 <TabsContent value="preferences" className="space-y-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle>Email Notifications</CardTitle>
+                      <CardTitle>Preferences</CardTitle>
                       <CardDescription>
-                        Configure your email notification preferences
+                        Manage your application preferences
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex items-center justify-between py-2">
-                        <div className="flex flex-col">
-                          <span className="font-medium">Scrape Completion</span>
-                          <span className="text-sm text-gray-500">Notify when a scrape is completed</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input type="checkbox" id="scrape-email" className="rounded text-teal-500 focus:ring-teal-500" />
-                        </div>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-medium">Notification Settings</h3>
+                        <Separator />
+                        <p className="text-sm text-gray-500">
+                          Notification preferences will be added in a future update.
+                        </p>
                       </div>
-                      <Separator />
-                      <div className="flex items-center justify-between py-2">
-                        <div className="flex flex-col">
-                          <span className="font-medium">Weekly Digest</span>
-                          <span className="text-sm text-gray-500">Weekly summary of your activity</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input type="checkbox" id="weekly-email" className="rounded text-teal-500 focus:ring-teal-500" />
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-4">
-                        Notification features will be available in a future update.
-                      </p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Display Settings</CardTitle>
-                      <CardDescription>
-                        Customize your application experience
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex items-center justify-between py-2">
-                        <div className="flex flex-col">
-                          <span className="font-medium">Dark Mode</span>
-                          <span className="text-sm text-gray-500">Switch between light and dark themes</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input type="checkbox" id="dark-mode" className="rounded text-teal-500 focus:ring-teal-500" />
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-4">
-                        Theme settings will be available in a future update.
-                      </p>
                     </CardContent>
                   </Card>
                 </TabsContent>
@@ -355,71 +313,19 @@ export default function Profile() {
                 <TabsContent value="security" className="space-y-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle>Change Password</CardTitle>
+                      <CardTitle>Security</CardTitle>
                       <CardDescription>
-                        Update your password to maintain account security
+                        Manage your security settings
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="current-password">Current Password</Label>
-                        <Input 
-                          id="current-password"
-                          type="password"
-                          placeholder="••••••••"
-                        />
+                    <CardContent>
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-medium">Password</h3>
+                        <Separator />
+                        <p className="text-sm text-gray-500">
+                          Password management will be added in a future update.
+                        </p>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="new-password">New Password</Label>
-                        <Input 
-                          id="new-password"
-                          type="password"
-                          placeholder="••••••••"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="confirm-password">Confirm New Password</Label>
-                        <Input 
-                          id="confirm-password"
-                          type="password"
-                          placeholder="••••••••"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-4">
-                        Password changing functionality will be available in a future update.
-                      </p>
-                    </CardContent>
-                    <CardFooter>
-                      <Button 
-                        disabled={true} 
-                        className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600"
-                      >
-                        <Lock className="mr-2 h-4 w-4" />
-                        Update Password
-                      </Button>
-                    </CardFooter>
-                  </Card>
-                  
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Two-Factor Authentication</CardTitle>
-                      <CardDescription>
-                        Add an extra layer of security to your account
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex items-center justify-between py-2">
-                        <div className="flex flex-col">
-                          <span className="font-medium">Enable 2FA</span>
-                          <span className="text-sm text-gray-500">Protect your account with two-factor authentication</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input type="checkbox" id="enable-2fa" className="rounded text-teal-500 focus:ring-teal-500" disabled />
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-4">
-                        Two-factor authentication will be available in a future update.
-                      </p>
                     </CardContent>
                   </Card>
                 </TabsContent>

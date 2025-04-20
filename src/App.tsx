@@ -10,8 +10,8 @@ import Dashboard from "./pages/Dashboard";
 import LeadScraper from "./pages/LeadScraper";
 import AllScrapedResults from "./pages/AllScrapedResults";
 import Profile from "./pages/Profile";
-import LeadGen from "./pages/LeadGen";
-import { AuthProvider } from "./contexts/AuthContext";
+import AuthCallback from "./pages/AuthCallback";
+import { SupabaseAuthProvider } from "./contexts/SupabaseAuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -19,14 +19,14 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <AuthProvider>
+      <SupabaseAuthProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/waitlist" element={<LeadGen />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <Dashboard />
@@ -50,7 +50,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
-      </AuthProvider>
+      </SupabaseAuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

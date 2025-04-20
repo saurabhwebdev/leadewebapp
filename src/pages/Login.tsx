@@ -1,12 +1,12 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Map } from "lucide-react";
 
 export default function Login() {
-  const { loginWithGoogle } = useAuth();
+  const { loginWithGoogle } = useSupabaseAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/dashboard";
@@ -17,7 +17,8 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     try {
       await loginWithGoogle();
-      navigate(from);
+      // Note: With Supabase OAuth, the navigation will happen after redirect back
+      // via the auth callback page
     } catch (err) {
       console.error("Failed to sign in with Google", err);
     }

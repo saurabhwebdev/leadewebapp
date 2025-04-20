@@ -496,26 +496,15 @@
     </div>
 
     <script type="module">
-        // Import Firebase
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.19.1/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.19.1/firebase-analytics.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.19.1/firebase-firestore.js";
+        // Import Supabase client
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.4/+esm';
         
-        // Firebase configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyBj4L6GM_g7B5Jss3nd-dC4H97vbJVHKsY",
-            authDomain: "tutionbuddy-8a377.firebaseapp.com",
-            projectId: "tutionbuddy-8a377",
-            storageBucket: "tutionbuddy-8a377.firebasestorage.app",
-            messagingSenderId: "462892200937",
-            appId: "1:462892200937:web:496468ed21055c71aa9178",
-            measurementId: "G-KGN88L3VVL"
-        };
+        // Supabase configuration
+        const supabaseUrl = 'https://uiokhjnhqeorzamkabju.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpb2toam5ocWVvcnphbWthYmp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODE5OTYsImV4cCI6MjA2MDc1Nzk5Nn0.brBww8LwfKuRfi6e-zixDkY-v4_vtX4DVs8SalpHZO8';
         
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
-        const db = getFirestore(app);
+        // Initialize Supabase client
+        const supabase = createClient(supabaseUrl, supabaseKey);
         
         // Form submission
         const waitlistForm = document.getElementById('waitlistForm');
@@ -537,26 +526,35 @@
             submitBtn.textContent = 'Submitting...';
             
             try {
-                // Add to Firestore
-                await addDoc(collection(db, "waitlistLeads"), {
-                    name,
-                    email,
-                    company,
-                    useCase,
-                    createdAt: serverTimestamp()
-                });
+                // Format data to match Supabase column names
+                const formData = {
+                    name: name,
+                    email: email,
+                    company: company || null,
+                    phone: null, // Not collected in this form
+                    usecase: useCase, // Lowercase column name in Supabase
+                    createdat: new Date().toISOString() // Lowercase column name in Supabase
+                };
+                
+                // Insert into Supabase
+                const { data, error } = await supabase
+                    .from('waitlistleads')
+                    .insert([formData])
+                    .select();
+                
+                if (error) throw error;
+                
+                console.log('Waitlist lead saved successfully:', data);
                 
                 // Show success message
                 waitlistForm.style.display = 'none';
                 successMessage.style.display = 'block';
                 
-                // Track conversion
-                analytics.logEvent('waitlist_signup', {
-                    email: email
-                });
+                // Simple analytics tracking
+                console.log('Conversion: waitlist_signup', { email: email });
                 
             } catch (error) {
-                console.error("Error adding document: ", error);
+                console.error("Error saving to Supabase: ", error);
                 errorMessage.style.display = 'block';
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Join Waitlist';

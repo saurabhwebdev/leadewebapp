@@ -1,11 +1,11 @@
 import { useState, useRef } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import ScraperSearch from "@/components/ScraperSearch";
 import ScraperResults from "@/components/ScraperResults";
-import { ScrapedLocation } from "@/lib/scraper";
+import { ScrapedLocation } from "@/lib/supabaseScraper";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, MapPin, HelpCircle, Loader2, ArrowUpRight, CheckCircle, Store } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,7 +16,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 
 export default function LeadScraper() {
-  const { currentUser } = useAuth();
+  const { currentUser } = useSupabaseAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<ScrapedLocation[]>([]);
   const [progressValue, setProgressValue] = useState(0);

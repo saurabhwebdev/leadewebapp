@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Building, Search, Database, Globe } from "lucide-react";
 
 export default function Home() {
-  const { currentUser } = useAuth();
+  const { currentUser } = useSupabaseAuth();
 
   // Set document title
   document.title = "MapHarvest - Business Lead Generation Tool";
@@ -36,9 +36,9 @@ export default function Home() {
                 </Link>
               ) : (
                 <>
-                  <Link to="/waitlist">
+                  <Link to="/login">
                     <Button size="lg" className="bg-teal-500 hover:bg-teal-600 text-white px-8">
-                      Join Waitlist <ArrowRight className="ml-2 h-4 w-4" />
+                      Get Started <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </Link>
                   <Link to="/login">
@@ -55,11 +55,11 @@ export default function Home() {
           <div className="w-full max-w-5xl mt-16 relative">
             <div className="aspect-[16/9] bg-gray-100 rounded-lg shadow-lg overflow-hidden">
               <img 
-                src="/dashboard-preview.png" 
-                alt="Platform preview" 
+                src="https://images.unsplash.com/photo-1674589977868-d7e801c48878?auto=format&fit=crop&q=80" 
+                alt="Analytics dashboard" 
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.currentTarget.src = "https://via.placeholder.com/1200x675/f3f4f6/94a3b8?text=MapHarvest+Dashboard";
+                  e.currentTarget.src = "https://placehold.co/1200x675/f3f4f6/94a3b8?text=MapHarvest+Dashboard";
                 }}
               />
             </div>
@@ -138,11 +138,11 @@ export default function Home() {
           <div className="max-w-3xl mx-auto text-center px-6">
             <h2 className="text-3xl font-bold mb-6">Ready to start collecting leads?</h2>
             <p className="text-xl mb-8 opacity-90">
-              Join our waitlist today to be notified when we launch.
+              Sign in now to start using our powerful lead generation tools.
             </p>
-            <Link to={currentUser ? "/dashboard" : "/waitlist"}>
+            <Link to={currentUser ? "/dashboard" : "/login"}>
               <Button size="lg" className="bg-white text-teal-600 hover:bg-gray-100 px-8">
-                {currentUser ? "Go to Dashboard" : "Join Waitlist"}
+                {currentUser ? "Go to Dashboard" : "Get Started"}
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>

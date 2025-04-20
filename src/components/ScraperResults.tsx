@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrapedLocation } from "@/lib/scraper";
+import { ScrapedLocation } from "@/lib/supabaseScraper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -53,22 +53,24 @@ export default function ScraperResults({ results, searchQuery }: ScraperResultsP
   const handleFilter = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.toLowerCase();
     setFilterText(value);
-    setCurrentPage(1);
     
-    if (!value) {
+    if (value.trim() === '') {
       setFilteredResults(results);
       return;
     }
     
-    const filtered = results.filter(
-      location => 
+    const filtered = results.filter(location => {
+      return (
         location.name.toLowerCase().includes(value) ||
-        location.address.toLowerCase().includes(value) ||
         location.specialty.toLowerCase().includes(value) ||
-        (location.phoneNumber && location.phoneNumber.toLowerCase().includes(value))
-    );
+        location.address.toLowerCase().includes(value) ||
+        (location.phoneNumber && location.phoneNumber.toLowerCase().includes(value)) ||
+        (location.email && location.email.toLowerCase().includes(value))
+      );
+    });
     
     setFilteredResults(filtered);
+    setCurrentPage(1); // Reset to first page on filter change
   };
 
   // Handle sorting
@@ -120,40 +122,43 @@ export default function ScraperResults({ results, searchQuery }: ScraperResultsP
   // CSV Export
   const exportToCSV = () => {
     try {
-      const headers = ['Name', 'Specialty', 'Address', 'Phone Number', 'Scraped Date'];
-      const dataRows = filteredResults.map(location => [
-        location.name,
-        location.specialty,
-        location.address,
-        location.phoneNumber || '',
-        new Date(location.scrapedAt).toLocaleString()
-      ]);
+      // Create CSV header
+      let csvContent = "Name,Specialty,Address,Phone Number,Email,Scraped Date\n";
       
-      const csvContent = [
-        headers.join(','),
-        ...dataRows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
+      // Add data rows
+      filteredResults.forEach(location => {
+        // Properly escape fields that might contain commas
+        const escapedName = `"${location.name.replace(/"/g, '""')}"`;
+        const escapedSpecialty = `"${location.specialty.replace(/"/g, '""')}"`;
+        const escapedAddress = `"${location.address.replace(/"/g, '""')}"`;
+        const phoneNumber = location.phoneNumber ? `"${location.phoneNumber}"` : '""';
+        const email = location.email ? `"${location.email}"` : '""';
+        const date = new Date(location.scrapedAt).toLocaleString();
+        
+        csvContent += `${escapedName},${escapedSpecialty},${escapedAddress},${phoneNumber},${email},"${date}"\n`;
+      });
       
+      // Create a download link and trigger download
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `business-leads-${new Date().toISOString().slice(0, 10)}.csv`);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `scraper-results-${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
       toast({
         title: "Export Successful",
-        description: `${filteredResults.length} business leads exported to CSV`,
-        className: "bg-teal-500 text-white",
+        description: `${filteredResults.length} results exported to CSV`,
+        variant: "default"
       });
     } catch (error) {
-      console.error("Error exporting to CSV:", error);
+      console.error('Error exporting to CSV:', error);
       toast({
-        variant: "destructive",
         title: "Export Failed",
-        description: "An error occurred while exporting data to CSV.",
+        description: "There was an error exporting to CSV. Please try again.",
+        variant: "destructive"
       });
     }
   };
@@ -210,62 +215,70 @@ export default function ScraperResults({ results, searchQuery }: ScraperResultsP
         }
       `;
       
-      printWindow.document.write(`
-        <!DOCTYPE html>
+      // Create a simple HTML table
+      let htmlContent = `
         <html>
-        <head>
-          <title>Business Leads - ${new Date().toLocaleDateString()}</title>
-          <style>${tableStyle}</style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Business Leads</h1>
-            <p>Generated on ${new Date().toLocaleString()}</p>
-            ${searchQuery ? `<p>Search query: ${searchQuery}</p>` : ''}
-            <p>Total results: ${filteredResults.length}</p>
-          </div>
-          
-          <table>
-            <thead>
-              <tr>
-                <th>Business Name</th>
-                <th>Type</th>
-                <th>Address</th>
-                <th>Phone</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredResults.map(result => `
+          <head>
+            <title>Scraped Results - ${searchQuery || 'All Results'}</title>
+            <style>${tableStyle}</style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Scraped Results${searchQuery ? ` - ${searchQuery}` : ''}</h1>
+              <p>Generated on ${new Date().toLocaleString()}</p>
+              <p>Total Results: ${filteredResults.length}</p>
+            </div>
+            <table>
+              <thead>
                 <tr>
-                  <td>${result.name}</td>
-                  <td>${result.specialty}</td>
-                  <td>${result.address}</td>
-                  <td>${result.phoneNumber || 'N/A'}</td>
+                  <th>Name</th>
+                  <th>Specialty</th>
+                  <th>Address</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Scraped Date</th>
                 </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          
-          <div class="no-print">
-            <button onclick="window.print()">Print</button>
-            <button onclick="window.close()">Close</button>
-          </div>
-        </body>
-        </html>
-      `);
+              </thead>
+              <tbody>
+      `;
       
+      // Add each row
+      filteredResults.forEach(location => {
+        htmlContent += `
+          <tr>
+            <td>${location.name}</td>
+            <td>${location.specialty}</td>
+            <td>${location.address}</td>
+            <td>${location.phoneNumber || 'N/A'}</td>
+            <td>${location.email || 'N/A'}</td>
+            <td>${new Date(location.scrapedAt).toLocaleString()}</td>
+          </tr>
+        `;
+      });
+      
+      htmlContent += `
+              </tbody>
+            </table>
+          </body>
+        </html>
+      `;
+      
+      // Write to the print window and print
+      printWindow.document.open();
+      printWindow.document.write(htmlContent);
       printWindow.document.close();
       
-      toast({
-        title: "Print Ready",
-        description: "Print dialog opened in a new window",
-      });
+      // Give it a moment to render before printing
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+      
     } catch (error) {
-      console.error('Print error:', error);
+      console.error('Error printing:', error);
       toast({
-        variant: "destructive",
         title: "Print Failed",
-        description: "There was an error preparing the print view",
+        description: "There was an error preparing the print view. Please try again.",
+        variant: "destructive"
       });
     }
   };
@@ -343,7 +356,7 @@ export default function ScraperResults({ results, searchQuery }: ScraperResultsP
           <div className="relative mt-4">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
             <Input
-              placeholder="Search by name, specialty, address or phone..."
+              placeholder="Search by name, specialty, address, phone or email..."
               className="pl-10 bg-white border-gray-200 focus-visible:ring-teal-500"
               value={filterText}
               onChange={handleFilter}
@@ -498,9 +511,9 @@ export default function ScraperResults({ results, searchQuery }: ScraperResultsP
                                                   variant="outline" 
                                                   size="sm" 
                                                   className="h-7 px-2 text-xs"
-                                                  onClick={() => copyToClipboard(location.phoneNumber || '', `${uniqueRowId}-phone`)}
+                                                  onClick={() => copyToClipboard(location.phoneNumber || '', uniqueRowId)}
                                                 >
-                                                  {copiedId === `${uniqueRowId}-phone` ? (
+                                                  {copiedId === uniqueRowId ? (
                                                     <>
                                                       <ClipboardCheck className="mr-1 h-3 w-3" />
                                                       Copied
@@ -520,6 +533,47 @@ export default function ScraperResults({ results, searchQuery }: ScraperResultsP
                                                 >
                                                   <Phone className="mr-1 h-3 w-3" />
                                                   Call
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      {location.email && (
+                                        <div className="flex items-start gap-2">
+                                          <Mail className="h-4 w-4 text-teal-500 mt-0.5" />
+                                          <div className="flex-grow">
+                                            <p className="text-sm font-medium">Email</p>
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                              <p className="text-sm text-gray-600">{location.email}</p>
+                                              <div className="flex gap-1">
+                                                <Button 
+                                                  variant="outline" 
+                                                  size="sm" 
+                                                  className="h-7 px-2 text-xs"
+                                                  onClick={() => copyToClipboard(location.email || '', `${uniqueRowId}-email`)}
+                                                >
+                                                  {copiedId === `${uniqueRowId}-email` ? (
+                                                    <>
+                                                      <ClipboardCheck className="mr-1 h-3 w-3" />
+                                                      Copied
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <Copy className="mr-1 h-3 w-3" />
+                                                      Copy
+                                                    </>
+                                                  )}
+                                                </Button>
+                                                <Button 
+                                                  variant="outline" 
+                                                  size="sm" 
+                                                  className="h-7 px-2 text-xs"
+                                                  onClick={() => window.open(`mailto:${location.email}`, '_blank')}
+                                                >
+                                                  <Mail className="mr-1 h-3 w-3" />
+                                                  Email
                                                 </Button>
                                               </div>
                                             </div>

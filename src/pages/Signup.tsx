@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { AlertCircle, ArrowRight, LockIcon, Mail, User } from "lucide-react";
@@ -16,7 +16,7 @@ export default function Signup() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signup, updateUserProfile } = useAuth();
+  const { signup, updateUserProfile } = useSupabaseAuth();
   const navigate = useNavigate();
 
   // Set document title

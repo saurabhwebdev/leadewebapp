@@ -4,15 +4,16 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Calendar, Download, Map, Database, Plus, Search, Users, ArrowUpRight, Store, ArrowRight, Phone } from "lucide-react";
-import { ScrapedLocation, getRecentScrapes } from "@/lib/scraper";
+import { ScrapedLocation } from "@/lib/supabaseDb";
+import { getRecentScrapes } from "@/lib/supabaseDb";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
-  const { currentUser } = useAuth();
+  const { currentUser } = useSupabaseAuth();
   const { toast } = useToast();
   const [date] = useState(new Date());
   const [recentScrapes, setRecentScrapes] = useState<ScrapedLocation[]>([]);
@@ -33,8 +34,18 @@ export default function Dashboard() {
     const loadRecentScrapes = async () => {
       try {
         // Get all data without limit to ensure we get the complete counts
-        const allData = await getRecentScrapes(100000); // Use a very high limit to get all data
+        const response = await getRecentScrapes(1000); // Use a reasonable limit for Supabase
+        const allData = response.data || [];
         setRecentScrapes(allData);
+        
+        // If no data exists yet, just set empty states without error
+        if (allData.length === 0) {
+          setTotalUniqueLeads(0);
+          setTotalSavedContacts(0);
+          setTotalUniqueQueries(0);
+          setUniqueScrapesData([]);
+          return;
+        }
         
         // De-duplicate data for accurate counts of unique businesses
         const uniqueLeadKeys = new Set();
@@ -63,8 +74,8 @@ export default function Dashboard() {
         
         // Sort by date first to get the most recent
         const sortedByDate = [...allData].sort((a, b) => {
-          const dateA = new Date(a.scrapedAt).getTime();
-          const dateB = new Date(b.scrapedAt).getTime();
+          const dateA = typeof a.scrapedAt === 'string' ? new Date(a.scrapedAt).getTime() : a.scrapedAt.getTime();
+          const dateB = typeof b.scrapedAt === 'string' ? new Date(b.scrapedAt).getTime() : b.scrapedAt.getTime();
           return dateB - dateA; // Most recent first
         });
         
@@ -84,16 +95,19 @@ export default function Dashboard() {
         
       } catch (error) {
         console.error("Error loading recent scrapes:", error);
-        toast({
-          variant: "destructive",
-          title: "Failed to load scrapes",
-          description: "Please try refreshing the page.",
-        });
+        // Don't show error message for first-time users
+        if (recentScrapes.length > 0) {
+          toast({
+            variant: "destructive",
+            title: "Failed to load scrapes",
+            description: "Please try refreshing the page.",
+          });
+        }
       }
     };
     
     loadRecentScrapes();
-  }, [toast]);
+  }, [toast, recentScrapes.length]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -129,7 +143,7 @@ export default function Dashboard() {
           <div className="mb-8">
             <Card className="bg-gradient-to-r from-teal-500 to-emerald-500 text-white border-none shadow-md">
               <CardHeader>
-                <CardTitle className="text-white">Welcome back, {currentUser?.displayName || 'User'}!</CardTitle>
+                <CardTitle className="text-white">Welcome back, {currentUser?.email?.split('@')[0] || 'User'}!</CardTitle>
                 <CardDescription className="text-white/80">
                   Ready to extract valuable data from Google Maps? Use our specialized business lead scraper.
                 </CardDescription>

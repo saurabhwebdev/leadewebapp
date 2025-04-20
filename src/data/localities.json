@@ -1,0 +1,32 @@
+{
+  "Mumbai": ["Andheri", "Bandra", "Borivali", "Colaba", "Dadar", "Juhu", "Malad", "Powai", "Worli"],
+  "Delhi": ["Connaught Place", "Hauz Khas", "Janakpuri", "Lajpat Nagar", "Rohini", "Saket", "Vasant Kunj"],
+  "Bangalore": [
+    "Indiranagar", "Jayanagar", "Koramangala", "Whitefield", "HSR Layout", "JP Nagar",
+    "MG Road", "Malleshwaram", "Sadashivanagar", "Rajajinagar", "Bellandur", "Electronic City",
+    "BTM Layout", "Richmond Town", "Frazer Town", "Hebbal", "Banashankari", "Yelahanka",
+    "Ulsoor", "Basavanagudi", "Kalyan Nagar", "Marathahalli", "Domlur", "Nagarbhavi",
+    "Sanjay Nagar", "HBR Layout", "RT Nagar", "Kengeri", "Sarjapur Road", "Hoodi",
+    "Nagavara", "Vasanth Nagar", "Shivaji Nagar", "Lingarajapuram", "Cox Town", "Wilson Garden",
+    "Bommanahalli", "KR Puram", "Peenya", "Mahadevapura", "Bagalur", "Kammanahalli",
+    "Bannerghatta Road", "Majestic", "Benson Town", "Arekere", "Attibele", "Chickpet",
+    "Bilekahalli", "Kadubeesanahalli", "Brookefield", "Sahakar Nagar", "Horamavu", "Jakkur",
+    "Kanakapura Road", "Hennur", "Subramanyapura", "Uttarahalli", "Anand Nagar", "Basaveshwaranagar",
+    "Yeshwanthpur", "New BEL Road", "Tavarekere", "Thippasandra", "Varthur", "Nagasandra",
+    "Kadugodi", "Bannerghatta", "Jeevanbheema Nagar", "BTM 2nd Stage", "BTM 1st Stage", "Vijayanagar",
+    "Shanti Nagar", "Kudlu Gate", "Singasandra", "Bommasandra", "Singsandra", "Hulimavu",
+    "Konanakunte", "Kumaraswamy Layout", "Lavelle Road", "Ramamurthy Nagar", "Padmanabhanagar",
+    "Magadi Road", "Manayata Tech Park", "Yelahanka New Town", "Rajarajeshwari Nagar",
+    "Devanahalli", "Chikkabanavara", "Hoskote", "Thubarahalli", "Sonnenahalli", "Kaval Byrasandra",
+    "Girinagar", "Vignana Nagar", "Nagendra Block", "ITPL", "Nagawara Junction", "T. Dasarahalli",
+    "Nelamangala", "Hoysala Nagar", "Banerghatta Road", "Ashok Nagar"
+  ],
+  "Hyderabad": ["Banjara Hills", "Jubilee Hills", "HITEC City", "Kukatpally", "Secunderabad", "Gachibowli"],
+  "Chennai": ["Adyar", "Anna Nagar", "Mylapore", "T. Nagar", "Velachery", "Besant Nagar", "Nungambakkam"],
+  "Kolkata": ["Park Street", "Salt Lake", "New Town", "Ballygunge", "Alipore", "Howrah"],
+  "Pune": ["Koregaon Park", "Baner", "Kothrud", "Viman Nagar", "Kalyani Nagar", "Camp"],
+  "Ahmedabad": ["Navrangpura", "Satellite", "Bodakdev", "Prahlad Nagar", "CG Road", "Maninagar"],
+  "Jaipur": ["C-Scheme", "Malviya Nagar", "Vaishali Nagar", "Mansarovar", "Raja Park", "Jawahar Nagar"],
+  "Lucknow": ["Gomti Nagar", "Hazratganj", "Indira Nagar", "Aliganj", "Mahanagar", "Jankipuram"],
+  "Chandigarh": ["Sector 17", "Sector 35", "Sector 22", "Sector 8", "Sector 9", "Sector 43"]
+} 
